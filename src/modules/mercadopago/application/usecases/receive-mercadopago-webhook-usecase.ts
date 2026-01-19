@@ -1,20 +1,30 @@
 import { AppError, ValidationError } from '../../../../shared/errors/app-error';
 import type { RecordData } from '../../../../shared/types/records';
+import type { MessagePublisher } from '../../../../shared/mq/message-publisher';
+import { logger } from '../../../../shared/logging/logger';
 import type { MercadoPagoWebhookRepository } from '../ports/MercadoPagoWebhookRepository';
 import { extractWebhookMetadata } from '../../domain/mercadopago-webhook';
+import { buildWebhookMessage, buildWebhookRoutingKey } from './mercadopago-webhook-message';
 
 export interface ReceiveMercadoPagoWebhookInput {
   payload: RecordData;
   headers: RecordData;
+  requestId?: string;
 }
 
 export interface ReceiveMercadoPagoWebhookOutput {
   event: RecordData;
   created: boolean;
+  published: boolean;
+  status: string;
 }
 
 export class ReceiveMercadoPagoWebhookUseCase {
-  constructor(private readonly webhookRepository: MercadoPagoWebhookRepository) {}
+  constructor(
+    private readonly webhookRepository: MercadoPagoWebhookRepository,
+    private readonly publisher: MessagePublisher,
+    private readonly exchange: string
+  ) {}
 
   async execute(input: ReceiveMercadoPagoWebhookInput): Promise<ReceiveMercadoPagoWebhookOutput> {
     const metadata = extractWebhookMetadata(input.payload);
@@ -25,7 +35,16 @@ export class ReceiveMercadoPagoWebhookUseCase {
 
     const existing = await this.webhookRepository.findByEventId(metadata.eventId);
     if (existing) {
-      return { event: existing, created: false };
+      logger.info(
+        { event_id: metadata.eventId, request_id: input.requestId ?? null },
+        'mercadopago_webhook_duplicate_ignored'
+      );
+      return {
+        event: existing,
+        created: false,
+        published: false,
+        status: String(existing.status ?? 'UNKNOWN')
+      };
     }
 
     try {
@@ -46,7 +65,71 @@ export class ReceiveMercadoPagoWebhookUseCase {
         last_error: null
       });
 
-      return { event, created: true };
+      const routingKey = buildWebhookRoutingKey(metadata.topic, metadata.action);
+      const message = buildWebhookMessage({
+        eventId: metadata.eventId,
+        topic: metadata.topic,
+        action: metadata.action,
+        createdAtMp: metadata.createdAtMp,
+        liveMode: metadata.liveMode,
+        payload: input.payload,
+        headers: input.headers,
+        requestId: input.requestId
+      });
+
+      const publishResult = await this.publisher.publish({
+        exchange: this.exchange,
+        routingKey,
+        payload: message,
+        correlationId: input.requestId,
+        messageId: metadata.eventId
+      });
+
+      if (!publishResult.published) {
+        const sanitized = sanitizeError(publishResult.error);
+        await this.webhookRepository.updateStatusByEventId(metadata.eventId, {
+          status: 'FAILED',
+          lastError: sanitized,
+          incrementAttempts: true
+        });
+
+        logger.error(
+          {
+            event_id: metadata.eventId,
+            request_id: input.requestId ?? null,
+            error: sanitized
+          },
+          'mercadopago_webhook_publish_failed'
+        );
+
+        return {
+          event,
+          created: true,
+          published: false,
+          status: 'FAILED'
+        };
+      }
+
+      await this.webhookRepository.updateStatusByEventId(metadata.eventId, {
+        status: 'PROCESSED',
+        lastError: null
+      });
+
+      logger.info(
+        {
+          event_id: metadata.eventId,
+          request_id: input.requestId ?? null,
+          routing_key: routingKey
+        },
+        'mercadopago_webhook_published'
+      );
+
+      return {
+        event,
+        created: true,
+        published: true,
+        status: 'PROCESSED'
+      };
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
@@ -57,3 +140,9 @@ export class ReceiveMercadoPagoWebhookUseCase {
     }
   }
 }
+
+const sanitizeError = (value?: string): string | null => {
+  if (!value) return null;
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  return normalized.length > 500 ? normalized.slice(0, 500) : normalized;
+};

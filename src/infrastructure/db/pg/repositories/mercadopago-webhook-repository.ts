@@ -79,4 +79,68 @@ export class PgMercadoPagoWebhookRepository implements MercadoPagoWebhookReposit
 
     return result.rows[0];
   }
+
+  async updateStatusByEventId(
+    eventId: string,
+    input: { status?: string; lastError?: string | null; incrementAttempts?: boolean }
+  ): Promise<RecordData> {
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    let index = 1;
+
+    if (input.status) {
+      updates.push(`status = $${index++}`);
+      values.push(input.status);
+    }
+
+    if (input.lastError !== undefined) {
+      updates.push(`last_error = $${index++}`);
+      values.push(input.lastError);
+    }
+
+    if (input.incrementAttempts) {
+      updates.push('process_attempts = process_attempts + 1');
+    }
+
+    if (updates.length === 0) {
+      const existing = await this.findByEventId(eventId);
+      if (!existing) {
+        throw new Error('event_not_found');
+      }
+      return existing;
+    }
+
+    values.push(eventId);
+
+    const result = await this.pool.query(
+      `
+        UPDATE mercadopago_webhook_events
+        SET ${updates.join(', ')}
+        WHERE mercadopago_event_id = $${index}
+        RETURNING ${SELECT_FIELDS}
+      `,
+      values
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('event_not_found');
+    }
+
+    return result.rows[0];
+  }
+
+  async listFailed(limit: number): Promise<RecordData[]> {
+    const result = await this.pool.query(
+      `
+        SELECT ${SELECT_FIELDS}
+        FROM mercadopago_webhook_events
+        WHERE status = 'FAILED'
+        ORDER BY received_at ASC
+        LIMIT $1
+      `,
+      [limit]
+    );
+
+    return result.rows ?? [];
+  }
 }

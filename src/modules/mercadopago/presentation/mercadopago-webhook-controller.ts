@@ -65,14 +65,17 @@ export class MercadoPagoWebhookController {
       const headers = normalizeHeaders(req.headers);
       const result = await this.useCase.execute({
         payload,
-        headers
+        headers,
+        requestId: req.correlationId
       });
 
       res.status(200).json({
         received: true,
         duplicate: !result.created,
         event_id: metadata.eventId,
-        request_id: req.correlationId
+        request_id: req.correlationId,
+        published: result.published,
+        status: result.status
       });
     } catch (error) {
       next(error);

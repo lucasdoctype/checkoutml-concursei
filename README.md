@@ -8,8 +8,10 @@
 1) Copie `.env.example` para `.env`.
 2) Preencha as variaveis obrigatorias:
    - `DATABASE_URL` (ou `SUPABASE_DB_URL`)
+   - `RABBITMQ_URL`
    - `MERCADOPAGO_WEBHOOK_SECRET` (opcional, mas recomendado)
    - `MERCADOPAGO_ACCESS_TOKEN` (obrigatorio para Pix/assinaturas)
+   - `INTERNAL_API_TOKEN` (para endpoints internos)
 3) Instale as dependencias:
    - `npm install`
 4) Rode em dev:
@@ -27,6 +29,14 @@
 - `MERCADOPAGO_BASE_URL`: base da API do Mercado Pago.
 - `MERCADOPAGO_NOTIFICATION_URL`: URL padrao de notificacao para Pix/assinaturas.
 - `MERCADOPAGO_TIMEOUT_MS`: timeout das chamadas HTTP para o Mercado Pago.
+- `RABBITMQ_URL`: URL de conexao do RabbitMQ.
+- `MQ_EXCHANGE_EVENTS`: exchange principal (default `mercadopago.events`).
+- `MQ_EXCHANGE_DLX`: exchange DLX (default `mercadopago.dlx`).
+- `MQ_QUEUE_PROCESS`: fila principal (default `mercadopago.events.process`).
+- `MQ_QUEUE_DLQ`: fila DLQ (default `mercadopago.events.dlq`).
+- `RETRY_TTLS_MS`: lista de TTLs de retry em ms (default `10000,60000,600000,3600000`).
+- `MAX_ATTEMPTS`: maximo de tentativas antes de DLQ (default 5).
+- `INTERNAL_API_TOKEN`: token para endpoints internos.
 - `RABBITMQ_DEFAULT_USER` / `RABBITMQ_DEFAULT_PASS`: credenciais do RabbitMQ no docker.
 
 ## Endpoints
@@ -59,9 +69,10 @@
 ## Docker (RabbitMQ)
 1) Defina `RABBITMQ_DEFAULT_USER` e `RABBITMQ_DEFAULT_PASS` no `.env`.
 2) Suba o RabbitMQ:
-   - `docker compose up -d rabbitmq`
+   - `docker compose up -d`
 3) Painel:
    - `http://localhost:15672`
+4) Verifique exchanges/queues/bindings nas abas `Exchanges` e `Queues`.
 
 ## Curl (exemplos)
 Webhook:
@@ -69,6 +80,20 @@ Webhook:
 curl -X POST http://localhost:3005/functions/v1/webhooks/mercadopago \
   -H "Content-Type: application/json" \
   -d '{"id":"123","data":{"id":"123"},"type":"payment","live_mode":false}'
+```
+
+Publish mock (interno - somente NODE_ENV != production):
+```bash
+curl -X POST http://localhost:3005/internal/mq/publish-mock \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-Token: seu_token" \
+  -d '{}'
+```
+
+Status do Rabbit (interno):
+```bash
+curl -X GET http://localhost:3005/internal/mq/status \
+  -H "X-Internal-Token: seu_token"
 ```
 
 Assinatura:
@@ -91,3 +116,6 @@ A tabela de webhooks deve existir no schema `presenq_mvp`. O SQL completo esta n
 ## Build e start
 - `npm run build`
 - `npm start`
+
+## Republish de FAILED
+- `npm run republish:failed`

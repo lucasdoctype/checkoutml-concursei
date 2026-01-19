@@ -34,7 +34,18 @@ const envSchema = z
     MERCADOPAGO_WEBHOOK_STRICT_SIGNATURE: booleanDefaultTrue,
     MERCADOPAGO_BASE_URL: urlWithDefault('https://api.mercadopago.com'),
     MERCADOPAGO_NOTIFICATION_URL: optionalUrl,
-    MERCADOPAGO_TIMEOUT_MS: z.coerce.number().int().positive().default(10000)
+    MERCADOPAGO_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
+    RABBITMQ_URL: z.preprocess(
+      emptyToUndefined,
+      z.string().url().default('amqp://guest:guest@localhost:5672')
+    ),
+    MQ_EXCHANGE_EVENTS: z.string().default('mercadopago.events'),
+    MQ_EXCHANGE_DLX: z.string().default('mercadopago.dlx'),
+    MQ_QUEUE_PROCESS: z.string().default('mercadopago.events.process'),
+    MQ_QUEUE_DLQ: z.string().default('mercadopago.events.dlq'),
+    RETRY_TTLS_MS: z.string().default('10000,60000,600000,3600000'),
+    MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+    INTERNAL_API_TOKEN: optionalString
   })
   .superRefine((value, ctx) => {
     if (!value.DATABASE_URL) {

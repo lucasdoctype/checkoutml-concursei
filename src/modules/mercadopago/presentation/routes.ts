@@ -10,7 +10,11 @@ import { MercadoPagoPixController } from './mercadopago-pix-controller';
 
 export const buildMercadoPagoRoutes = (deps: Dependencies): Router => {
   const router = Router();
-  const webhookUseCase = new ReceiveMercadoPagoWebhookUseCase(deps.repositories.mercadopagoWebhookRepository);
+  const webhookUseCase = new ReceiveMercadoPagoWebhookUseCase(
+    deps.repositories.mercadopagoWebhookRepository,
+    deps.mq.publisher,
+    deps.mq.config.exchange
+  );
   const webhookController = new MercadoPagoWebhookController(webhookUseCase);
   const subscriptionController = new MercadoPagoSubscriptionController(
     new CreateMercadoPagoSubscriptionUseCase(deps.clients.mercadopagoApiClient),

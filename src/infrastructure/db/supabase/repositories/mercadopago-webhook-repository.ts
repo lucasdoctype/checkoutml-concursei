@@ -65,4 +65,70 @@ export class SupabaseMercadoPagoWebhookRepository implements MercadoPagoWebhookR
 
     return data as RecordData;
   }
+
+  async updateStatusByEventId(
+    eventId: string,
+    input: { status?: string; lastError?: string | null; incrementAttempts?: boolean }
+  ): Promise<RecordData> {
+    if (!input.status && input.lastError === undefined && !input.incrementAttempts) {
+      const existing = await this.findByEventId(eventId);
+      if (!existing) {
+        throw new Error('event_not_found');
+      }
+      return existing;
+    }
+
+    const updatePayload: Record<string, unknown> = {};
+
+    if (input.status) {
+      updatePayload.status = input.status;
+    }
+
+    if (input.lastError !== undefined) {
+      updatePayload.last_error = input.lastError;
+    }
+
+    if (input.incrementAttempts) {
+      const { data: current, error: selectError } = await this.client
+        .from('mercadopago_webhook_events')
+        .select('process_attempts')
+        .eq('mercadopago_event_id', eventId)
+        .maybeSingle();
+
+      if (selectError) {
+        throw selectError;
+      }
+
+      const attempts = Number((current as RecordData | null)?.process_attempts ?? 0);
+      updatePayload.process_attempts = attempts + 1;
+    }
+
+    const { data, error } = await this.client
+      .from('mercadopago_webhook_events')
+      .update(updatePayload)
+      .eq('mercadopago_event_id', eventId)
+      .select(SELECT_FIELDS)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return data as RecordData;
+  }
+
+  async listFailed(limit: number): Promise<RecordData[]> {
+    const { data, error } = await this.client
+      .from('mercadopago_webhook_events')
+      .select(SELECT_FIELDS)
+      .eq('status', 'FAILED')
+      .order('received_at', { ascending: true })
+      .limit(limit);
+
+    if (error) {
+      throw error;
+    }
+
+    return (data as RecordData[]) ?? [];
+  }
 }
