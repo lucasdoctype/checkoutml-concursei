@@ -60,8 +60,22 @@ export const validateMercadoPagoSignature = (input: MercadoPagoSignatureInput): 
   const actual = parsed.v1;
   const valid = safeCompare(expected, actual);
 
+  if (!valid) {
+    return {
+      valid: false,
+      reason: 'signature_mismatch',
+      details: {
+        timestamp: parsed.ts,
+        signature: actual,
+        expected,
+        payload: signaturePayload
+      }
+    };
+  }
+
+
   return {
-    valid,
+    valid: true,
     details: {
       timestamp: parsed.ts,
       signature: actual,
@@ -103,9 +117,11 @@ const parseSignatureHeader = (header?: string): { ts: string; v1: string } | nul
 const isTimestampValid = (timestamp: string, toleranceSec: number, now = new Date()): boolean => {
   const ts = Number(timestamp);
   if (!Number.isFinite(ts)) return false;
-  const diffSec = Math.abs(now.getTime() - ts * 1000) / 1000;
+  const tsMs = ts > 1_000_000_000_000 ? ts : ts * 1000;
+  const diffSec = Math.abs(now.getTime() - tsMs) / 1000;
   return diffSec <= toleranceSec;
 };
+
 
 const safeCompare = (expected: string, actual: string): boolean => {
   const expectedBuf = Buffer.from(expected, 'utf8');

@@ -32,27 +32,7 @@ export class MercadoPagoWebhookController {
         res.locals.webhookEventId = queryDataId;
       }
 
-      // depois de rawBody/payload e antes da validação de assinatura
-      logger.info(
-        {
-          correlationId: req.correlationId,
-          method: req.method,
-          path: req.originalUrl,
-          query: req.query,
-          headers: {
-            'content-type': req.header('content-type'),
-            'user-agent': req.header('user-agent'),
-            'x-request-id': req.header('x-request-id'),
-            'x-signature_present': Boolean(req.header('x-signature')),
-            // se quiser ver o valor, recomendo truncar:
-            'x-signature': (req.header('x-signature') ?? '').slice(0, 80) || null
-          },
-          rawBody_preview: rawBody.slice(0, 500),
-          payload_keys: payload ? Object.keys(payload) : null
-        },
-        'mercadopago_webhook_incoming'
-      );
-
+ 
       if (env.MERCADOPAGO_WEBHOOK_SECRET && env.MERCADOPAGO_WEBHOOK_STRICT_SIGNATURE) {
         const signatureHeader = req.header('x-signature');
         const requestIdHeader = req.header('x-request-id') ?? undefined;
