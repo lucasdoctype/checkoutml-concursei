@@ -27,7 +27,7 @@ export class PgMercadoPagoWebhookRepository implements MercadoPagoWebhookReposit
     const result = await this.pool.query(
       `
         SELECT ${SELECT_FIELDS}
-        FROM mercadopago_webhook_events
+        FROM presenq_mvp.mercadopago_webhook_events
         WHERE mercadopago_event_id = $1
         LIMIT 1
       `,
@@ -40,7 +40,7 @@ export class PgMercadoPagoWebhookRepository implements MercadoPagoWebhookReposit
   async create(input: RecordData): Promise<RecordData> {
     const result = await this.pool.query(
       `
-        INSERT INTO mercadopago_webhook_events (
+        INSERT INTO presenq_mvp.mercadopago_webhook_events (
           mercadopago_event_id,
           notification_id,
           resource_id,
@@ -114,7 +114,7 @@ export class PgMercadoPagoWebhookRepository implements MercadoPagoWebhookReposit
 
     const result = await this.pool.query(
       `
-        UPDATE mercadopago_webhook_events
+        UPDATE presenq_mvp.mercadopago_webhook_events
         SET ${updates.join(', ')}
         WHERE mercadopago_event_id = $${index}
         RETURNING ${SELECT_FIELDS}
@@ -133,7 +133,7 @@ export class PgMercadoPagoWebhookRepository implements MercadoPagoWebhookReposit
     const result = await this.pool.query(
       `
         SELECT ${SELECT_FIELDS}
-        FROM mercadopago_webhook_events
+        FROM presenq_mvp.mercadopago_webhook_events
         WHERE status = 'FAILED'
         ORDER BY received_at ASC
         LIMIT $1

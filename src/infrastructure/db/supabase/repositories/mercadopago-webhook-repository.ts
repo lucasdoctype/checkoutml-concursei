@@ -25,7 +25,7 @@ export class SupabaseMercadoPagoWebhookRepository implements MercadoPagoWebhookR
 
   async findByEventId(eventId: string): Promise<RecordData | null> {
     const { data, error } = await this.client
-      .from('mercadopago_webhook_events')
+      .from('presenq_mvp.mercadopago_webhook_events')
       .select(SELECT_FIELDS)
       .eq('mercadopago_event_id', eventId)
       .maybeSingle();
@@ -39,7 +39,7 @@ export class SupabaseMercadoPagoWebhookRepository implements MercadoPagoWebhookR
 
   async create(input: RecordData): Promise<RecordData> {
     const { data, error } = await this.client
-      .from('mercadopago_webhook_events')
+      .from('presenq_mvp.mercadopago_webhook_events')
       .insert({
         mercadopago_event_id: input.mercadopago_event_id,
         notification_id: input.notification_id,
@@ -90,7 +90,7 @@ export class SupabaseMercadoPagoWebhookRepository implements MercadoPagoWebhookR
 
     if (input.incrementAttempts) {
       const { data: current, error: selectError } = await this.client
-        .from('mercadopago_webhook_events')
+        .from('presenq_mvp.mercadopago_webhook_events')
         .select('process_attempts')
         .eq('mercadopago_event_id', eventId)
         .maybeSingle();
@@ -104,7 +104,7 @@ export class SupabaseMercadoPagoWebhookRepository implements MercadoPagoWebhookR
     }
 
     const { data, error } = await this.client
-      .from('mercadopago_webhook_events')
+      .from('presenq_mvp.mercadopago_webhook_events')
       .update(updatePayload)
       .eq('mercadopago_event_id', eventId)
       .select(SELECT_FIELDS)
@@ -119,7 +119,7 @@ export class SupabaseMercadoPagoWebhookRepository implements MercadoPagoWebhookR
 
   async listFailed(limit: number): Promise<RecordData[]> {
     const { data, error } = await this.client
-      .from('mercadopago_webhook_events')
+      .from('presenq_mvp.mercadopago_webhook_events')
       .select(SELECT_FIELDS)
       .eq('status', 'FAILED')
       .order('received_at', { ascending: true })

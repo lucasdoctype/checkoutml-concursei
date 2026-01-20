@@ -54,7 +54,7 @@
 ## Webhook Mercado Pago
 - Configure a URL no painel do Mercado Pago apontando para o endpoint acima.
 - O corpo precisa ser JSON (raw). A assinatura sera validada se `MERCADOPAGO_WEBHOOK_SECRET` estiver setado.
-- O payload e os headers sao persistidos em `mercadopago_webhook_events`.
+- O payload e os headers sao persistidos em `presenq_mvp.mercadopago_webhook_events`.
 
 ## Assinaturas (Preapproval)
 - Criar: `POST /subscriptions` (repasse o payload esperado pelo Mercado Pago).

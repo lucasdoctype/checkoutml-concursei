@@ -50,7 +50,7 @@ const buildSupabaseDependencies = (): Dependencies => {
     mq,
     health: {
       checkDatabase: async () => {
-        const { error } = await client.from('mercadopago_webhook_events').select('id').limit(1);
+        const { error } = await client.from('presenq_mvp.mercadopago_webhook_events').select('id').limit(1);
         return !error;
       },
       checkRabbit: async () => {
