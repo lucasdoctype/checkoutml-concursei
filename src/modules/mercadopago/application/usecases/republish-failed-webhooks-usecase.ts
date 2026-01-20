@@ -50,7 +50,7 @@ export class RepublishFailedWebhooksUseCase {
           exchange: this.options.dlx,
           routingKey: this.options.dlqRoutingKey,
           payload,
-          correlationId: requestId,
+          correlationId: requestId ?? undefined,
           messageId: eventId || undefined
         });
 
@@ -86,7 +86,7 @@ export class RepublishFailedWebhooksUseCase {
         exchange: this.options.exchange,
         routingKey,
         payload,
-        correlationId: requestId,
+        correlationId: requestId ?? undefined,
         messageId: eventId || undefined
       });
 

@@ -7,6 +7,8 @@ export interface RabbitMqStatus {
   connected: boolean;
   channelReady: boolean;
 }
+
+
 export class RabbitMqConnection {
   private connection: AmqpConnection | null = null;
   private channel: ConfirmChannel | null = null;
@@ -16,6 +18,14 @@ export class RabbitMqConnection {
   private reconnectAttempts = 0;
 
   constructor(private readonly url: string) { }
+
+  getStatus(): RabbitMqStatus {
+    return {
+      connected: !!this.connection,
+      channelReady: !!this.channel
+    };
+  }
+  
 
   start(): void {
     void this.connect();
