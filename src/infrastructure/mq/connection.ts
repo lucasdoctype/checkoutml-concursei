@@ -3,7 +3,10 @@ import type { ConfirmChannel } from 'amqplib';
 import { logger } from '../../shared/logging/logger';
 
 type AmqpConnection = Awaited<ReturnType<typeof amqp.connect>>;
-
+export interface RabbitMqStatus {
+  connected: boolean;
+  channelReady: boolean;
+}
 export class RabbitMqConnection {
   private connection: AmqpConnection | null = null;
   private channel: ConfirmChannel | null = null;
@@ -12,7 +15,7 @@ export class RabbitMqConnection {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private reconnectAttempts = 0;
 
-  constructor(private readonly url: string) {}
+  constructor(private readonly url: string) { }
 
   start(): void {
     void this.connect();
