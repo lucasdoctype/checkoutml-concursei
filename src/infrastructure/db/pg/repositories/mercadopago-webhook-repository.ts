@@ -1,6 +1,9 @@
+// PgMercadoPagoWebhookRepository.ts
 import { Pool } from 'pg';
 import type { MercadoPagoWebhookRepository } from '../../../../modules/mercadopago/application/ports/MercadoPagoWebhookRepository';
 import type { RecordData } from '../../../../shared/types/records';
+
+const TABLE = 'presenq_mvp.mercadopago_webhook_events';
 
 const SELECT_FIELDS = `
   id,
@@ -27,20 +30,20 @@ export class PgMercadoPagoWebhookRepository implements MercadoPagoWebhookReposit
     const result = await this.pool.query(
       `
         SELECT ${SELECT_FIELDS}
-        FROM presenq_mvp.mercadopago_webhook_events
+        FROM ${TABLE}
         WHERE mercadopago_event_id = $1
         LIMIT 1
       `,
       [eventId]
     );
 
-    return result.rows[0] ?? null;
+    return (result.rows[0] as RecordData | undefined) ?? null;
   }
 
   async create(input: RecordData): Promise<RecordData> {
     const result = await this.pool.query(
       `
-        INSERT INTO presenq_mvp.mercadopago_webhook_events (
+        INSERT INTO ${TABLE} (
           mercadopago_event_id,
           notification_id,
           resource_id,
@@ -77,7 +80,7 @@ export class PgMercadoPagoWebhookRepository implements MercadoPagoWebhookReposit
       ]
     );
 
-    return result.rows[0];
+    return result.rows[0] as RecordData;
   }
 
   async updateStatusByEventId(
@@ -104,9 +107,7 @@ export class PgMercadoPagoWebhookRepository implements MercadoPagoWebhookReposit
 
     if (updates.length === 0) {
       const existing = await this.findByEventId(eventId);
-      if (!existing) {
-        throw new Error('event_not_found');
-      }
+      if (!existing) throw new Error('event_not_found');
       return existing;
     }
 
@@ -114,7 +115,7 @@ export class PgMercadoPagoWebhookRepository implements MercadoPagoWebhookReposit
 
     const result = await this.pool.query(
       `
-        UPDATE presenq_mvp.mercadopago_webhook_events
+        UPDATE ${TABLE}
         SET ${updates.join(', ')}
         WHERE mercadopago_event_id = $${index}
         RETURNING ${SELECT_FIELDS}
@@ -126,14 +127,14 @@ export class PgMercadoPagoWebhookRepository implements MercadoPagoWebhookReposit
       throw new Error('event_not_found');
     }
 
-    return result.rows[0];
+    return result.rows[0] as RecordData;
   }
 
   async listFailed(limit: number): Promise<RecordData[]> {
     const result = await this.pool.query(
       `
         SELECT ${SELECT_FIELDS}
-        FROM presenq_mvp.mercadopago_webhook_events
+        FROM ${TABLE}
         WHERE status = 'FAILED'
         ORDER BY received_at ASC
         LIMIT $1
@@ -141,6 +142,6 @@ export class PgMercadoPagoWebhookRepository implements MercadoPagoWebhookReposit
       [limit]
     );
 
-    return result.rows ?? [];
+    return (result.rows as RecordData[]) ?? [];
   }
 }
