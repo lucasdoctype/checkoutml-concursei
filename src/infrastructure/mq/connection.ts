@@ -9,70 +9,73 @@ export interface RabbitMqStatus {
 export class RabbitMqConnection {
   private connection: Connection | null = null;
   private channel: ConfirmChannel | null = null;
-  private connecting = false;
+
+  private connectPromise: Promise<void> | null = null; // <-- ADICIONE
   private reconnectTimer: NodeJS.Timeout | null = null;
   private reconnectAttempts = 0;
 
   constructor(private readonly url: string) {}
 
   start(): void {
-    void this.connect();
+    void this.connect(); // ok
   }
 
   async ensureChannel(): Promise<ConfirmChannel | null> {
-    if (this.channel) return this.channel;
-    await this.connect();
+    await this.connect();          // <-- garante que aguardará a promise em andamento
     return this.channel;
-  }
-
-  getChannel(): ConfirmChannel | null {
-    return this.channel;
-  }
-
-  getStatus(): RabbitMqStatus {
-    return {
-      connected: !!this.connection,
-      channelReady: !!this.channel
-    };
   }
 
   private async connect(): Promise<void> {
-    if (this.connecting) return;
     if (this.channel) return;
-    this.connecting = true;
 
-    try {
-      const connection = await amqp.connect(this.url);
-      connection.on('error', (error) => {
-        logger.error({ err: error }, 'rabbitmq_connection_error');
-      });
-      connection.on('close', () => {
-        logger.warn('rabbitmq_connection_closed');
+    // Se já tem tentativa em andamento, aguarde ela
+    if (this.connectPromise) {
+      await this.connectPromise;
+      return;
+    }
+
+    this.connectPromise = (async () => {
+      try {
+        const connection = await amqp.connect(this.url);
+
+        connection.on('error', (error) => {
+          logger.error({ err: error }, 'rabbitmq_connection_error');
+        });
+
+        connection.on('close', () => {
+          logger.warn('rabbitmq_connection_closed');
+          this.cleanup();
+          this.scheduleReconnect();
+        });
+
+        const channel = await connection.createConfirmChannel();
+
+        channel.on('error', (error) => {
+          logger.error({ err: error }, 'rabbitmq_channel_error');
+        });
+
+        channel.on('close', () => {
+          logger.warn('rabbitmq_channel_closed');
+          this.channel = null;
+          this.scheduleReconnect();
+        });
+
+        this.connection = connection;
+        this.channel = channel;
+        this.reconnectAttempts = 0;
+
+        logger.info('rabbitmq_connected');
+      } catch (error) {
+        logger.error({ err: error }, 'rabbitmq_connect_failed');
         this.cleanup();
         this.scheduleReconnect();
-      });
+      }
+    })();
 
-      const channel = await connection.createConfirmChannel();
-      channel.on('error', (error) => {
-        logger.error({ err: error }, 'rabbitmq_channel_error');
-      });
-      channel.on('close', () => {
-        logger.warn('rabbitmq_channel_closed');
-        this.channel = null;
-        this.scheduleReconnect();
-      });
-
-      this.connection = connection;
-      this.channel = channel;
-      this.reconnectAttempts = 0;
-
-      logger.info('rabbitmq_connected');
-    } catch (error) {
-      logger.error({ err: error }, 'rabbitmq_connect_failed');
-      this.cleanup();
-      this.scheduleReconnect();
+    try {
+      await this.connectPromise;
     } finally {
-      this.connecting = false;
+      this.connectPromise = null;
     }
   }
 
