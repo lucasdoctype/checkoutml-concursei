@@ -31,6 +31,17 @@ export class HttpMercadoPagoApiClient implements MercadoPagoApiClient {
     return this.request('POST', '/v1/payments', payload);
   }
 
+  async getPayment(id: string): Promise<RecordData> {
+    return this.request('GET', `/v1/payments/${encodeURIComponent(id)}`);
+  }
+
+  async getMerchantOrder(idOrUrl: string): Promise<RecordData> {
+    const path = isAbsoluteUrl(idOrUrl)
+      ? idOrUrl
+      : `/merchant_orders/${encodeURIComponent(idOrUrl)}`;
+    return this.request('GET', path);
+  }
+
   private async request(method: string, path: string, payload?: RecordData): Promise<RecordData> {
     if (!this.accessToken) {
       throw new UnauthorizedError('missing_mercadopago_access_token');
@@ -40,7 +51,7 @@ export class HttpMercadoPagoApiClient implements MercadoPagoApiClient {
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const response = await fetch(`${this.baseUrl}${path}`, {
+      const response = await fetch(resolveUrl(this.baseUrl, path), {
         method,
         headers: {
           Authorization: `Bearer ${this.accessToken}`,
@@ -69,6 +80,15 @@ export class HttpMercadoPagoApiClient implements MercadoPagoApiClient {
     }
   }
 }
+
+const resolveUrl = (baseUrl: string, path: string): string => {
+  if (isAbsoluteUrl(path)) {
+    return path;
+  }
+  return `${baseUrl}${path}`;
+};
+
+const isAbsoluteUrl = (value: string): boolean => /^https?:\/\//i.test(value);
 
 const parseResponse = async (response: Response): Promise<unknown> => {
   const text = await response.text();

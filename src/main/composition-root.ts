@@ -1,16 +1,20 @@
 import { env } from '../config/env';
 import type { MercadoPagoApiClient } from '../modules/mercadopago/application/ports/MercadoPagoApiClient';
 import type { MercadoPagoWebhookRepository } from '../modules/mercadopago/application/ports/MercadoPagoWebhookRepository';
+import type { BillingRepository } from '../modules/mercadopago/application/ports/BillingRepository';
 import { createSupabaseClient } from '../infrastructure/db/supabase/client';
 import { createPgPool } from '../infrastructure/db/pg/pool';
 import { SupabaseMercadoPagoWebhookRepository } from '../infrastructure/db/supabase/repositories/mercadopago-webhook-repository';
 import { PgMercadoPagoWebhookRepository } from '../infrastructure/db/pg/repositories/mercadopago-webhook-repository';
+import { SupabaseBillingRepository } from '../infrastructure/db/supabase/repositories/billing-repository';
+import { PgBillingRepository } from '../infrastructure/db/pg/repositories/billing-repository';
 import { HttpMercadoPagoApiClient } from '../infrastructure/http/mercadopago/client';
 import type { MqDependencies } from '../infrastructure/mq';
 import { createMqDependencies } from '../infrastructure/mq';
 
 export interface Repositories {
   mercadopagoWebhookRepository: MercadoPagoWebhookRepository;
+  billingRepository: BillingRepository;
 }
 
 export interface Clients {
@@ -42,7 +46,8 @@ const buildSupabaseDependencies = (): Dependencies => {
 
   return {
     repositories: {
-      mercadopagoWebhookRepository: new SupabaseMercadoPagoWebhookRepository(client)
+      mercadopagoWebhookRepository: new SupabaseMercadoPagoWebhookRepository(client),
+      billingRepository: new SupabaseBillingRepository(client)
     },
     clients: {
       mercadopagoApiClient: apiClient
@@ -68,7 +73,8 @@ const buildPgDependencies = (): Dependencies => {
 
   return {
     repositories: {
-      mercadopagoWebhookRepository: new PgMercadoPagoWebhookRepository(pool)
+      mercadopagoWebhookRepository: new PgMercadoPagoWebhookRepository(pool),
+      billingRepository: new PgBillingRepository(pool)
     },
     clients: {
       mercadopagoApiClient: apiClient
