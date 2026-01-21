@@ -4,11 +4,13 @@ import { buildDependencies } from './composition-root';
 import { logger } from '../shared/logging/logger';
 import type { RecordData } from '../shared/types/records';
 import { ProcessMercadoPagoWebhookUseCase } from '../modules/mercadopago/application/usecases/process-mercadopago-webhook-usecase';
+import { env } from '../config/env';
 
 const PREFETCH_COUNT = 10;
 
 const startWorker = async () => {
   const dependencies = buildDependencies();
+  logWorkerConfig(dependencies);
   await dependencies.mq.bootstrap();
 
   const channel = await dependencies.mq.connection.ensureChannel();
@@ -63,6 +65,8 @@ const handleMessage = async (
     return;
   }
 
+  logger.info(buildMessageSummary(msg, payload), 'mercadopago_worker_received');
+
   try {
     const result = await processor.execute(payload);
     logger.info(
@@ -78,6 +82,13 @@ const handleMessage = async (
     );
     channel.ack(msg);
   } catch (error) {
+    logger.error(
+      {
+        err: error,
+        ...buildMessageSummary(msg, payload)
+      },
+      'mercadopago_worker_processing_failed'
+    );
     const attempts = resolveAttempts(msg, payload);
     const nextAttempt = attempts + 1;
     const shouldDlq = nextAttempt >= dependencies.mq.config.maxAttempts;
@@ -238,6 +249,95 @@ const resolveCorrelationId = (msg: ConsumeMessage, payload: RecordData): string 
 
 const resolveMessageId = (msg: ConsumeMessage, payload: RecordData): string | undefined => {
   return msg.properties.messageId ?? (payload.eventId as string | undefined);
+};
+
+const logWorkerConfig = (dependencies: ReturnType<typeof buildDependencies>): void => {
+  const dbInfo = parseUrlInfo(env.DATABASE_URL);
+  const supabaseInfo = parseUrlInfo(env.SUPABASE_URL);
+  const mqInfo = parseUrlInfo(env.RABBITMQ_URL);
+
+  logger.info(
+    {
+      db_adapter: env.DATABASE_URL ? 'pg' : 'supabase',
+      db_host: dbInfo?.host ?? null,
+      db_port: dbInfo?.port ?? null,
+      db_name: dbInfo?.database ?? null,
+      supabase_host: supabaseInfo?.host ?? null,
+      mq_host: mqInfo?.host ?? null,
+      mq_port: mqInfo?.port ?? null,
+      mq_exchange: dependencies.mq.config.exchange,
+      mq_dlx: dependencies.mq.config.dlx,
+      mq_queue_process: dependencies.mq.config.processQueue,
+      mq_queue_dlq: dependencies.mq.config.dlqQueue,
+      mq_max_attempts: dependencies.mq.config.maxAttempts
+    },
+    'mercadopago_worker_config'
+  );
+};
+
+const parseUrlInfo = (
+  value?: string | null
+): { host: string; port: number | null; database: string | null } | null => {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    const database = url.pathname ? url.pathname.replace(/^\/+/, '') : null;
+    return {
+      host: url.hostname,
+      port: url.port ? Number(url.port) : null,
+      database: database && database.length > 0 ? database : null
+    };
+  } catch {
+    return null;
+  }
+};
+
+const buildMessageSummary = (msg: ConsumeMessage, payload: RecordData): RecordData => {
+  const headers = msg.properties.headers ?? {};
+  return {
+    routing_key: msg.fields.routingKey,
+    message_id: msg.properties.messageId ?? null,
+    correlation_id: msg.properties.correlationId ?? null,
+    attempts: resolveHeaderNumber(headers, 'x-attempts') ?? resolvePayloadAttempts(payload),
+    event_id: asString(payload.eventId) ?? asString(payload.id) ?? null,
+    topic: asString(payload.topic) ?? asString(payload.type) ?? null,
+    action: asString(payload.action) ?? null,
+    payload_id: asString(payload.id) ?? null,
+    payload_data_id: asString(getNested(payload, ['data', 'id'])) ?? null,
+    payload_resource: asString(payload.resource) ?? null
+  };
+};
+
+const resolvePayloadAttempts = (payload: RecordData): number => {
+  const payloadAttempts = payload.attempts;
+  if (typeof payloadAttempts === 'number' && Number.isFinite(payloadAttempts)) {
+    return payloadAttempts;
+  }
+  if (typeof payloadAttempts === 'string') {
+    const parsed = Number(payloadAttempts);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+};
+
+const getNested = (value: RecordData, path: string[]): unknown => {
+  let current: unknown = value;
+  for (const key of path) {
+    if (!current || typeof current !== 'object') return null;
+    current = (current as RecordData)[key];
+  }
+  return current ?? null;
+};
+
+const asString = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  return null;
 };
 
 const buildHeaders = (

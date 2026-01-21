@@ -27,7 +27,27 @@ export class ProcessMercadoPagoWebhookUseCase {
     const action = asString(message.action ?? payload.action);
     const eventType = resolveEventType(topic, action);
 
+    logger.info(
+      {
+        event_id: asString(message.eventId) ?? asString(payload.id) ?? null,
+        topic,
+        action,
+        event_type: eventType,
+        payload_id: asString(payload.id) ?? null,
+        payload_data_id: asString(getNested(payload, ['data', 'id'])) ?? null,
+        payload_resource: asString(payload.resource) ?? null
+      },
+      'mercadopago_process_started'
+    );
+
     if (eventType === 'unknown') {
+      logger.info(
+        {
+          topic,
+          action
+        },
+        'mercadopago_process_ignored'
+      );
       return { status: 'ignored', reason: 'unsupported_topic' };
     }
 
@@ -37,6 +57,16 @@ export class ProcessMercadoPagoWebhookUseCase {
         : await resolvePaymentFromNotification(this.apiClient, payload);
 
     if (!paymentDetails) {
+      logger.warn(
+        {
+          topic,
+          action,
+          payload_id: asString(payload.id) ?? null,
+          payload_data_id: asString(getNested(payload, ['data', 'id'])) ?? null,
+          payload_resource: asString(payload.resource) ?? null
+        },
+        'mercadopago_payment_not_found'
+      );
       return { status: 'ignored', reason: 'payment_not_found' };
     }
 
@@ -46,19 +76,56 @@ export class ProcessMercadoPagoWebhookUseCase {
     const externalReference =
       asString(payment.external_reference) ?? paymentDetails.externalReference ?? null;
 
+    const metadataSummary = summarizeMetadata(payment.metadata);
+    logger.info(
+      {
+        payment_id: paymentId,
+        payment_status: paymentStatus,
+        external_reference: externalReference,
+        merchant_order_id:
+          paymentDetails.merchantOrderId ?? resolveMerchantOrderIdFromPayment(payment),
+        metadata_keys: metadataSummary.keys
+      },
+      'mercadopago_payment_resolved'
+    );
+
     const { userId, planCode } = resolveCheckoutMetadata(payment.metadata, externalReference);
 
     if (!userId || !planCode) {
+      logger.warn(
+        {
+          payment_id: paymentId,
+          payment_status: paymentStatus,
+          external_reference: externalReference,
+          metadata_keys: metadataSummary.keys
+        },
+        'mercadopago_checkout_metadata_missing'
+      );
       throw new Error('missing_checkout_metadata');
     }
 
     const plan = await this.billingRepository.findPlanByCode(planCode);
     if (!plan) {
+      logger.warn(
+        {
+          plan_code: planCode,
+          user_id: userId,
+          payment_id: paymentId
+        },
+        'mercadopago_plan_not_found'
+      );
       throw new Error(`plan_not_found:${planCode}`);
     }
 
     const amount = resolvePaymentAmount(payment);
     if (amount === null) {
+      logger.warn(
+        {
+          payment_id: paymentId,
+          payment_status: paymentStatus
+        },
+        'mercadopago_payment_amount_missing'
+      );
       throw new Error('missing_payment_amount');
     }
 
@@ -78,30 +145,62 @@ export class ProcessMercadoPagoWebhookUseCase {
 
     let subscription: SubscriptionRecord | null = existingSubscription;
 
+    logger.info(
+      {
+        user_id: userId,
+        plan_code: planCode,
+        payment_id: paymentId,
+        payment_status: paymentStatus,
+        existing_subscription_id: existingSubscription?.id ?? null,
+        existing_subscription_status: existingSubscription?.status ?? null,
+        can_update: canUpdate
+      },
+      'mercadopago_subscription_loaded'
+    );
+
     if (paymentStatus === 'approved') {
-      subscription = canUpdate
-        ? await this.billingRepository.updateSubscription({
-            subscriptionId: existingSubscription!.id,
-            planId: plan.id,
-            status: 'active',
-            trialEndsAt: null,
-            currentPeriodStart,
-            currentPeriodEnd
-          })
-        : await this.billingRepository.createSubscription({
-            userId,
-            planId: plan.id,
-            status: 'active',
-            trialEndsAt: null,
-            currentPeriodStart,
-            currentPeriodEnd
-          });
+      if (canUpdate) {
+        subscription = await this.billingRepository.updateSubscription({
+          subscriptionId: existingSubscription!.id,
+          planId: plan.id,
+          status: 'active',
+          trialEndsAt: null,
+          currentPeriodStart,
+          currentPeriodEnd
+        });
+        logger.info(
+          {
+            subscription_id: subscription.id,
+            user_id: userId,
+            plan_id: plan.id
+          },
+          'mercadopago_subscription_updated'
+        );
+      } else {
+        subscription = await this.billingRepository.createSubscription({
+          userId,
+          planId: plan.id,
+          status: 'active',
+          trialEndsAt: null,
+          currentPeriodStart,
+          currentPeriodEnd
+        });
+        logger.info(
+          {
+            subscription_id: subscription.id,
+            user_id: userId,
+            plan_id: plan.id
+          },
+          'mercadopago_subscription_created'
+        );
+      }
     } else if (!canUpdate) {
       logger.info(
         {
           payment_id: paymentId,
           status: paymentStatus,
-          user_id: userId
+          user_id: userId,
+          can_update: canUpdate
         },
         'mercadopago_payment_not_approved'
       );
@@ -117,7 +216,7 @@ export class ProcessMercadoPagoWebhookUseCase {
       throw new Error('subscription_unresolved');
     }
 
-    await this.billingRepository.upsertSubscriptionPayment({
+    const paymentRecord = await this.billingRepository.upsertSubscriptionPayment({
       subscriptionId: subscription.id,
       mpPaymentId: paymentId,
       mpMerchantOrderId:
@@ -129,6 +228,20 @@ export class ProcessMercadoPagoWebhookUseCase {
       externalReference,
       raw: payment
     });
+
+    logger.info(
+      {
+        payment_record_id: paymentRecord.id,
+        subscription_id: subscription.id,
+        payment_id: paymentId,
+        payment_status: paymentStatus,
+        amount,
+        currency,
+        paid_at: paidAt,
+        external_reference: externalReference
+      },
+      'mercadopago_payment_upserted'
+    );
 
     return {
       status: 'processed',
@@ -373,6 +486,14 @@ const parseDate = (value: unknown): string | null => {
 };
 
 const isAnnualPlanCode = (value: string): boolean => value.toUpperCase().endsWith('_ANUAL');
+
+const summarizeMetadata = (metadata: unknown): { keys: string[] } => {
+  if (!isRecord(metadata)) {
+    return { keys: [] };
+  }
+  const keys = Object.keys(metadata);
+  return { keys: keys.length > 25 ? keys.slice(0, 25) : keys };
+};
 
 const isUuid = (value: string): boolean =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
