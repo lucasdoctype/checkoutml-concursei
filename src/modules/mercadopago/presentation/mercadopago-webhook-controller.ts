@@ -46,7 +46,20 @@ export class MercadoPagoWebhookController {
         'mercadopago_webhook_received'
       );
 
-      if (env.MERCADOPAGO_WEBHOOK_SECRET && env.MERCADOPAGO_WEBHOOK_STRICT_SIGNATURE) {
+      const sandboxMode =
+        (env.MERCADOPAGO_ACCESS_TOKEN ?? '').toUpperCase().startsWith('TEST-') ||
+        (env.NODE_ENV ?? '').toLowerCase() !== 'production';
+
+      if (env.MERCADOPAGO_WEBHOOK_STRICT_SIGNATURE === false || sandboxMode) {
+        logger.info(
+          {
+            correlation_id: req.correlationId,
+            sandbox_mode: sandboxMode,
+            strict_signature: env.MERCADOPAGO_WEBHOOK_STRICT_SIGNATURE ?? null
+          },
+          'mercadopago_webhook_signature_skipped'
+        );
+      } else if (env.MERCADOPAGO_WEBHOOK_SECRET) {
         const signatureHeader = req.header('x-signature');
         const requestIdHeader = req.header('x-request-id') ?? undefined;
         const dataId =

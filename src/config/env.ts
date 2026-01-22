@@ -6,7 +6,7 @@ const optionalUrl = z.preprocess(emptyToUndefined, z.string().url().optional());
 const optionalString = z.preprocess(emptyToUndefined, z.string().min(1).optional());
 const urlWithDefault = (value: string) =>
   z.preprocess(emptyToUndefined, z.string().url().default(value));
-const booleanDefaultTrue = z.preprocess((value) => {
+const booleanDefaultFalse = z.preprocess((value) => {
   if (value === undefined || value === '') return undefined;
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase();
@@ -14,7 +14,7 @@ const booleanDefaultTrue = z.preprocess((value) => {
     if (normalized === 'false' || normalized === '0' || normalized === 'no') return false;
   }
   return value;
-}, z.boolean().default(true));
+}, z.boolean().default(false));
 
 const envSchema = z
   .object({
@@ -31,7 +31,7 @@ const envSchema = z
     MERCADOPAGO_ACCESS_TOKEN: optionalString,
     MERCADOPAGO_WEBHOOK_SECRET: optionalString,
     MERCADOPAGO_WEBHOOK_TOLERANCE_SEC: z.coerce.number().int().positive().default(300),
-    MERCADOPAGO_WEBHOOK_STRICT_SIGNATURE: booleanDefaultTrue,
+    MERCADOPAGO_WEBHOOK_STRICT_SIGNATURE: booleanDefaultFalse,
     MERCADOPAGO_BASE_URL: urlWithDefault('https://api.mercadopago.com'),
     MERCADOPAGO_NOTIFICATION_URL: optionalUrl,
     MERCADOPAGO_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
