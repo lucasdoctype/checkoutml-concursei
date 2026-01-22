@@ -3,13 +3,15 @@ import { env } from '../../../config/env';
 import { ValidationError } from '../../../shared/errors/app-error';
 import type { CreateMercadoPagoPixPaymentUseCase } from '../application/usecases/create-mercadopago-pix-payment-usecase';
 import { asString, getNested, requireObjectBody } from './mercadopago-http-utils';
+import { logger } from '../../../shared/logging/logger';
+import type { RecordData } from '../../../shared/types/records';
 
 export class MercadoPagoPixController {
   constructor(private readonly createUseCase: CreateMercadoPagoPixPaymentUseCase) {}
 
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const payload = requireObjectBody(req);
+      const payload = requireObjectBody(req) as RecordData;
       const normalized = normalizePixPayload(payload);
       if (!normalized) {
         throw new ValidationError('invalid_pix_payload');
@@ -19,8 +21,29 @@ export class MercadoPagoPixController {
         normalized.notification_url = env.MERCADOPAGO_NOTIFICATION_URL;
       }
 
+      logger.info(
+        {
+          correlation_id: req.correlationId,
+          payload: summarizePixPayload(normalized)
+        },
+        'mercadopago_pix_request'
+      );
+
       const response = await this.createUseCase.execute(normalized);
-      res.status(201).json(mapPixResponse(response));
+      const mapped = mapPixResponse(response);
+
+      logger.info(
+        {
+          correlation_id: req.correlationId,
+          payment_id: mapped.payment_id,
+          status: mapped.status,
+          status_detail: mapped.status_detail,
+          qr_code_present: Boolean(mapped.qr_code || mapped.qr_code_base64 || mapped.ticket_url)
+        },
+        'mercadopago_pix_response'
+      );
+
+      res.status(201).json(mapped);
     } catch (error) {
       next(error);
     }
@@ -86,4 +109,21 @@ const mapPixResponse = (response: Record<string, unknown>) => {
     ticket_url: asString(getNested(transactionData, ['ticket_url'])),
     payment: response
   };
+};
+
+const summarizePixPayload = (payload: RecordData): RecordData => {
+  const summary: RecordData = {};
+  const maybe = (key: string, value: unknown) => {
+    if (value === undefined || value === null) return;
+    summary[key] = value;
+  };
+
+  maybe('transaction_amount', payload.transaction_amount);
+  maybe('description', payload.description);
+  maybe('external_reference', payload.external_reference);
+  maybe('notification_url', payload.notification_url);
+  maybe('payment_method_id', payload.payment_method_id);
+  maybe('payer_email', (payload.payer as RecordData | undefined)?.email ?? payload.payer_email);
+  maybe('payer_identification', (payload.payer as RecordData | undefined)?.identification);
+  return summary;
 };

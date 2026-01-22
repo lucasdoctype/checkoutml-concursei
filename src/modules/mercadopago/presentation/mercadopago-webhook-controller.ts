@@ -32,7 +32,20 @@ export class MercadoPagoWebhookController {
         res.locals.webhookEventId = queryDataId;
       }
 
- 
+      logger.info(
+        {
+          correlation_id: req.correlationId,
+          event_id: metadata.eventId ?? null,
+          notification_id: metadata.notificationId ?? null,
+          resource_id: metadata.resourceId ?? null,
+          topic: metadata.topic ?? null,
+          action: metadata.action ?? null,
+          live_mode: metadata.liveMode ?? null,
+          query_data_id: queryDataId ?? null
+        },
+        'mercadopago_webhook_received'
+      );
+
       if (env.MERCADOPAGO_WEBHOOK_SECRET && env.MERCADOPAGO_WEBHOOK_STRICT_SIGNATURE) {
         const signatureHeader = req.header('x-signature');
         const requestIdHeader = req.header('x-request-id') ?? undefined;
